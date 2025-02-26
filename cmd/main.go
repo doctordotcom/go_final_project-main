@@ -13,8 +13,8 @@ func main() {
 	webDir := "web"
 	http.Handle("/", http.FileServer(http.Dir(webDir)))
 	http.HandleFunc("/api/nextdate", handlers.GetNextDateHandler)
-	http.HandleFunc("/api/task", handlers.PostNextTaskHandler)
-	//r.Get("...", Handlers.GetTaskByID)
+	http.HandleFunc("/api/task", handlers.PostTaskHandler)
+	// http.HandleFunc("/api/tasks", handlers.GetTaskHandler)
 	//r.Delete("...", Handlers.DeleteTask)
 	scheduler.Build()
 	scheduler.Open()

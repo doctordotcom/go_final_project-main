@@ -6,31 +6,19 @@ import (
 	"m/models"
 	"m/rules"
 	"net/http"
-	"strings"
 	"time"
 )
-
-// // функция для обработки ошибки
-// func sendErrorResponse(w http.ResponseWriter, message string, status int) {
-// 	http.Error(w, message, status)
-// }
 
 // Глобальная переменная для базы данных
 var db *sql.DB
 
-// getNextDateHandler - обработчик для "/api/nextdate", получение следующей даты
+// GetNextDateHandler - обработчик для "/api/nextdate", получение следующей даты
 func GetNextDateHandler(w http.ResponseWriter, r *http.Request) {
 	// проверка метода Get
 	if r.Method != http.MethodGet {
 		http.Error(w, "Метод не разрешен", http.StatusMethodNotAllowed)
 		return
 	}
-	// // проверка формата json
-	// if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-	// 	log.Printf("запрос не содержит json")
-	// 	sendErrorResponse(w, "запрос не содержит json", http.StatusUnsupportedMediaType)
-	// 	return
-	// }
 	// Получение параметров запроса
 	nowStr := r.URL.Query().Get("now")
 	dateStr := r.URL.Query().Get("date")
@@ -62,26 +50,16 @@ func GetNextDateHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(NextDate))
 }
 
-// postNextTaskHandler - обработчик для добавления задачи
-func PostNextTaskHandler(w http.ResponseWriter, r *http.Request) {
-	// проверка метода Post
+// PostTaskHandler - обработчик для добавления задачи
+func PostTaskHandler(w http.ResponseWriter, r *http.Request) {
+	// Проверка метода Post
 	if r.Method != http.MethodPost {
 		http.Error(w, "Метод не разрешен", http.StatusMethodNotAllowed)
 		return
 	}
-	// // Проверка формата json
-	// if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-	// 	http.Error(w, "Запрос не содержит JSON", http.StatusUnsupportedMediaType)
-	// 	return
-	// }
-	// глобальная переменная для структуры Task из пакета models
+	// Глобальная переменная для структуры Task из пакета models
 	var task models.Task
-	// Проверка, не пустое ли r.Body
-	if r.Body == nil {
-		http.Error(w, "Тело запроса не может быть пустым", http.StatusBadRequest)
-		return
-	}
-	// Декодировка JSON-запроса в структуру Task
+	// Десериализация JSON-запроса в структуру Task
 	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		defer r.Body.Close()
@@ -92,7 +70,7 @@ func PostNextTaskHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "поле Title не может быть пустым", http.StatusBadRequest)
 		return
 	}
-	// Получаем текущую дату
+	// Получение текущей даты
 	today := time.Now().Format("20060102")
 	todayDate, err := time.Parse("20060102", today)
 	if err != nil {
@@ -118,11 +96,6 @@ func PostNextTaskHandler(w http.ResponseWriter, r *http.Request) {
 			if task.Repeat == "" {
 				task.Date = today
 			} else {
-				// Проверка правила повторения
-				if strings.Contains(task.Repeat, "wm") {
-					http.Error(w, "Лишь правила d (день) и y (год) допустимы", http.StatusBadRequest)
-					return
-				}
 				// Функция NextDate вычисляет следующую дату с учетом repeat
 				nextDateStr, err := rules.NextDate(todayDate, task.Date, task.Repeat)
 				if err != nil {
@@ -141,11 +114,70 @@ func PostNextTaskHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Возвращение ответа с кодом 201 (Created)
-	w.WriteHeader(http.StatusCreated)
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(task); err != nil {
 		http.Error(w, "Ошибка кодирования JSON: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// json.NewEncoder(w).Encode(task)
+}
+
+// GetTaskHandler - обработчик для получения списка задач
+func GetTaskHandler(w http.ResponseWriter, r *http.Request) {
+	// Проверка метода GET
+	if r.Method != http.MethodGet {
+		http.Error(w, "Метод не разрешен", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Получение параметра фильтрации по заголовку, если он есть
+	titleFilter := r.URL.Query().Get("title")
+
+	// Определение максимального количества задач, которое будет возвращаться
+	const maxTasks = 50
+	limit := maxTasks
+
+	// Создание SQL-запроса для получения задач
+	sqlQuery := `SELECT * FROM scheduler WHERE title LIKE ? OR comment LIKE ? ORDER BY date LIMIT ?`
+	// sqlQuery := `SELECT date, title, comment, repeat FROM scheduler WHERE title LIKE ? LIMIT ?`
+	// фильтрация с помощью SQL LIKE
+	filter := "%" + titleFilter + "%"
+
+	// Выполнение запроса к базе данных
+	rows, err := db.Query(sqlQuery, filter, limit)
+	if err != nil {
+		http.Error(w, "Ошибка выполнения запроса к базе данных: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	// Создание слайса для хранения задач
+	var tasks []models.Task
+
+	// Итерация строк результата запроса
+	for rows.Next() {
+		var task models.Task
+		// Считывание значений в структуру Task
+		if err := rows.Scan(&task.Date, &task.Title, &task.Comment, &task.Repeat); err != nil {
+			http.Error(w, "Ошибка считывания данных задачи: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Добавление задач в слайс
+		tasks = append(tasks, task)
+	}
+
+	// Проверка на наличие ошибок в процессе итерации строк
+	if err := rows.Err(); err != nil {
+		http.Error(w, "Ошибка при переборе задач: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Установка заголовка Content-Type для ответа
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
+
+	// Сериализация слайса задач в JSON и отправка его в ответе
+	if err := json.NewEncoder(w).Encode(tasks); err != nil {
+		http.Error(w, "Ошибка кодирования JSON: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 }

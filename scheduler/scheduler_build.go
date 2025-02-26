@@ -11,7 +11,7 @@ import (
 
 func Build() {
 
-	// os.Getwd возвращает путь к исполняемому файлу программы (вместо Executable, чтобы не было ошибки пути)
+	// os.Getwd возвращает путь к исполняемому файлу программы (альтернатива os.Executable)
 	appPath, err := os.Getwd()
 	if err != nil {
 		log.Fatal(err)
@@ -32,24 +32,24 @@ func Build() {
 		// os.Create создаёт файл по определённому пути, который передаётся в качестве параметра.
 		file, err := os.Create(dbFile)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("Не удалось создать файл по указанному пути", err)
 		}
 		// defer file.Close - отложенное закрытие file после завершения работы с ним.
 		defer file.Close()
 		// проверка, существует ли sql файл перед его прочтением
 		_, err = os.Stat("scheduler.sql")
 		if os.IsNotExist(err) {
-			log.Fatal("Файл scheduler.sql не найден")
+			log.Fatal("Файл scheduler.sql не найден", err)
 		}
 		// os.ReadFile читает файл, где указано как строить таблицу.
 		n, err := os.ReadFile("scheduler.sql")
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("Не удалось прочесть файл scheduler.sql", err)
 		}
 		// sql.Open подключает к базе данных.
 		DB, err := sql.Open("sqlite", dbFile)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("Не удалось подключиться к базе данных", err)
 			return
 		}
 		defer DB.Close()
@@ -58,7 +58,7 @@ func Build() {
 		m := string(n)
 		_, err = DB.Exec(m)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("Ошибка приёма или возврата значения sql запроса", err)
 			return
 		}
 	}
